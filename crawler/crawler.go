@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"sync"
 
 	"github.com/pkg/errors"
@@ -51,35 +52,6 @@ func New(workerCount int, httpClient httpClient) Crawler {
 }
 
 func (c *crawler) Crawl(rawURL string, out io.Writer) error {
-	/*
-		parse the rawURL argument into a *url.URL. Return an error if unable to parse.
-
-		create
-			- a cache of type map[string]struct{}{} to store urls that have already been seen
-			- a channel of type *url.URL to be used for new urls
-			- a *sync.WaitGroup to contrl the flow of the application
-
-		increment the waitgroup by 1
-
-		concurrently add the url argument to the newURLs channel
-
-		concurrently
-			- wait for the waitgroup to finish using the Wait function
-			- close the newurls channel to indicate that there are no more new urls
-
-		start n workers where n equals c.workerCount passing in the newURLs channel
-
-		fan in the channels returned by the workers (channels of type *Page and error ) and listen to them in a select
-
-		on receiving any error from a worker exit the application with a non-zero exit code
-
-		on receiving a *Page from a worker
-			- serialize the page and print it to the output stream
-			- filter out links not of the same domain
-			- filter out links that have already been seen
-			- for each of the links left increment the waitgroup by 1 and put them on to the newurls channel concurrently (important!)
-			- decrement the wait group by 1
-	*/
 	seedURL, err := url.Parse(rawURL)
 	if err != nil {
 		return err
@@ -133,23 +105,24 @@ func (c *crawler) Crawl(rawURL string, out io.Writer) error {
 				}
 			}
 
+			wg.Done()
 		case err, ok := <-errChan:
 			if !ok {
 				return nil
 			}
 
 			if errors.Cause(err) == ErrHttpStatusCode {
-				fmt.Println(err)
+				fmt.Fprintln(os.Stderr, err)
+				wg.Done()
 				break
 			}
 			if err, ok := err.(net.Error); ok && err.Timeout() {
-				fmt.Println(err)
+				fmt.Fprintln(os.Stderr, err)
+				wg.Done()
 				break
 			}
 			return err
 		}
-
-		wg.Done()
 	}
 }
 
@@ -165,7 +138,7 @@ func getPages(httpClient httpClient, urls <-chan *url.URL) (<-chan *Page, <-chan
 			resp, err := httpClient.Get(url.String())
 			if err != nil {
 				errs <- err
-				return
+				continue
 			}
 
 			if resp.StatusCode >= 400 {
@@ -176,12 +149,12 @@ func getPages(httpClient httpClient, urls <-chan *url.URL) (<-chan *Page, <-chan
 			var buf bytes.Buffer
 			if _, err := io.Copy(&buf, resp.Body); err != nil {
 				errs <- err
-				return
+				continue
 			}
 
 			if err := resp.Body.Close(); err != nil {
 				errs <- err
-				return
+				continue
 			}
 
 			pages <- &Page{URL: url, Links: collectLinks(url, &buf)}

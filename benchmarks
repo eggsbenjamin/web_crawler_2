@@ -1,0 +1,10 @@
+goos: darwin
+goarch: amd64
+pkg: github.com/eggsbenjamin/web_crawler/crawler
+BenchmarkCrawler/1-8           1        203064243291 ns/op
+BenchmarkCrawler/10-8          1        23071710041 ns/op
+BenchmarkCrawler/100-8         1        5838470770 ns/op
+BenchmarkCrawler/1000-8        1        5193137791 ns/op
+BenchmarkCrawler/2000-8        1        5027739789 ns/op
+PASS
+ok      github.com/eggsbenjamin/web_crawler/crawler     242.228s
